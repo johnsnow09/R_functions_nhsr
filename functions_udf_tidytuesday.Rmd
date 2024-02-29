@@ -1,0 +1,585 @@
+---
+title: "User Defined Functions tidytuesday"
+output:   
+  html_notebook:
+    highlight: tango
+    df_print: paged
+    toc: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: false
+    number_sections: true
+    toc_depth: 6
+---
+
+<style type="text/css">
+
+body, td {
+   font-family: "OCR-B 10 BT";
+}
+code.r{
+  font-family: "OCR-B 10 BT";
+}
+pre {
+  font-family: "OCR-B 10 BT";
+}
+</style>
+
+# Functions tidytuesday
+
+
+## options & settings
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r}
+options(scipen = 999)
+```
+
+
+## links
+
+from: 
+
+https://www.youtube.com/watch?v=7oz1qGClrl0
+https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-07-21
+
+
+## install libs
+
+```{r}
+library(tidyverse)
+```
+
+## load data
+
+```{r}
+animal_outcomes <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-21/animal_outcomes.csv')
+
+animal_complaints <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-21/animal_complaints.csv')
+
+brisbane_complaints <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-21/brisbane_complaints.csv')
+
+```
+
+
+## EDA
+
+```{r}
+head(animal_outcomes)
+```
+
+```{r}
+animal_outcomes %>% glimpse()
+```
+
+```{r}
+animal_outcomes %>% count(animal_type)
+```
+
+
+```{r}
+animal_outcomes %>% count(outcome)
+```
+
+```{r}
+animal_complaints %>%  head()
+```
+
+
+```{r}
+animal_complaints %>% glimpse()
+```
+
+```{r}
+animal_complaints %>% n_distinct("Complaint Type")
+```
+
+```{r}
+animal_complaints %>% summarise_all(n_distinct)
+```
+
+```{r}
+animal_complaints %>% count(`Complaint Type`) 
+```
+
+```{r}
+animal_complaints %>% 
+  count(`Complaint Type`) %>% 
+  ggplot(aes(x = `Complaint Type`, y = n)) + 
+  geom_col()
+
+```
+
+### changing all chars to factors
+
+```{r}
+animal_complaints <- animal_complaints %>% 
+  mutate_if(is.character, as.factor)
+
+str(animal_complaints)
+```
+
+
+```{r}
+animal_complaints %>% 
+  select(`Complaint Type`, `Electoral Division`) %>% 
+  group_by(`Electoral Division`, `Complaint Type`) %>% 
+  summarise(counts = n() ) %>% 
+  ggplot(aes(`Electoral Division`, counts, fill = `Complaint Type`)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+
+```{r}
+animal_complaints %>% 
+  select(`Animal Type`, `Electoral Division`) %>% 
+  group_by(`Electoral Division`, `Animal Type`) %>% 
+  summarise(counts = n() ) %>% 
+  ggplot(aes(`Electoral Division`, counts, fill = `Animal Type`)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+
+```{r}
+animal_complaints %>% 
+  select(`Animal Type`, `Complaint Type`) %>% 
+  group_by(`Complaint Type`, `Animal Type`) %>% 
+  summarise(counts = n() ) %>% 
+  ggplot(aes(`Complaint Type`, counts, fill = `Animal Type`)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+## Functions
+
+### Renaming column names
+
+```{r}
+animal_complaints <- animal_complaints %>% 
+  rename_all(.funs = function(.x){
+    .x %>% tolower() %>% str_replace(pattern = " ", replacement = "_")
+  })
+```
+
+```{r}
+animal_complaints %>% head()
+```
+
+
+### Convert_to_fraction
+
+```{r}
+animal_outcomes %>%  head()
+```
+
+
+```{r}
+convert_to_frac <- function(var, total){
+  return(var / total)
+}
+
+animal_outcomes %>% 
+  mutate(across(ACT:WA, ~convert_to_frac(var = .x, total = Total )))
+
+```
+
+
+### Calling udf inside udf 
+
+```{r}
+convert_to_frac_df <- function(df) {
+  
+  df %>% 
+  mutate(across(ACT:WA, ~convert_to_frac(var = .x, total = Total )))
+}
+
+convert_to_frac_df(animal_outcomes)
+```
+
+
+```{r}
+animal_outcomes %>% convert_to_frac_df()
+```
+
+
+### Another way of above function
+
+use . instead of df
+
+```{r}
+tiday_frac <- . %>% mutate(across(ACT:WA, ~convert_to_frac(var = .x, total = Total )))
+
+animal_outcomes %>% tiday_frac()
+```
+
+
+### factors_bar_chart
+
+```{r}
+animal_outcomes %>% 
+  select(outcome) %>% 
+  count(outcome) %>% 
+  mutate(outcome = reorder(outcome, n)) %>% 
+  ggplot(aes(x = outcome, y = n, fill = outcome)) +
+  geom_col() +
+  theme_bw() +
+  coord_flip()
+```
+
+```{r}
+factors_bar_chart <- function(df, var){
+  var <- enquo(var)
+  
+  df %>% 
+    select(!!var) %>% 
+    count(!!var) %>% 
+    mutate(!!var := reorder(!!var, n)) %>% 
+    ggplot(aes(x = !!var, y = n, fill = !!var)) +
+    geom_col() +
+    theme_bw() +
+    coord_flip()
+}
+
+factors_bar_chart(animal_outcomes, outcome)
+```
+
+```{r}
+factors_bar_chart(animal_outcomes, animal_type)
+```
+
+## Functions for Analysing each county
+
+```{r}
+brisbane_complaints %>%  glimpse()
+```
+
+### columns unique value count
+
+```{r}
+brisbane_complaints %>% map_dbl(~n_distinct(.x))
+```
+
+### converting char to factors
+
+```{r}
+brisbane_complaints <- brisbane_complaints %>% 
+                          mutate_if(is.character, as.factor)
+
+str(brisbane_complaints)
+```
+
+### Chart for 1 Suburb
+
+```{r}
+brisbane_complaints %>% 
+  filter(suburb == "SUNNYBANK") %>% 
+  count(category) %>% 
+  drop_na() %>% 
+  mutate(category = reorder(category, n)) %>% 
+  
+  ggplot(aes(x = category, y =n, fill = category)) +
+  geom_col() +
+  coord_flip() +
+  theme_bw()
+```
+
+
+```{r}
+brisbane_complaints %>% 
+  filter(suburb == "SUNNYBANK",
+         animal_type == "Attack") %>% 
+  count(category) %>% 
+  drop_na() %>% 
+  mutate(category = reorder(category, n)) %>% 
+  
+  ggplot(aes(x = category, y =n, fill = category)) +
+  geom_col() +
+  coord_flip() +
+  theme_bw()
+```
+
+### Function for charting all suburbs 
+
+```{r}
+brisbane_complaints %>% 
+  filter(animal_type == "Attack") %>% 
+  count(suburb, category) %>% 
+  drop_na() %>% 
+  mutate(category = reorder(category, n)) 
+```
+
+
+```{r}
+
+save_charts_func <- function(df, filename){
+  
+  temp_chart <- df %>% 
+                  mutate(category = reorder(category, n)) %>%
+                  ggplot(aes(x = category, y =n, fill = category)) +
+                    geom_col() +
+                    coord_flip() +
+                    theme_bw() +
+                    ggtitle(paste0(filename,"Attacks"))
+                            
+  ggsave(filename = paste0(filename, ".pdf"), 
+         plot = temp_chart, 
+         width = 11, height = 8.5, units = "in")
+}
+```
+
+
+```{r}
+brisbane_complaints %>% 
+  filter(animal_type == "Attack") %>% 
+  count(suburb, category) %>% 
+  drop_na() %>% 
+  nest(-suburb)
+```
+
+#### Applying function to save charts
+
+```{r}
+
+library(magrittr)
+
+brisbane_complaints %>% 
+  filter(animal_type == "Attack") %>% 
+  count(suburb, category) %>% 
+  drop_na() %>% 
+  nest(-suburb) %>% 
+  mutate(suburb = str_replace(suburb, " ","_")) %$% 
+  walk2(.x = data, .y = suburb, .f = save_charts_func)
+```
+
+Another way of saving charts
+
+from: https://youtu.be/GxvccD8K49M?t=3262 (About Functional Programming, Purr package)
+
+```{r}
+# dir.create("charts_images")
+```
+
+
+```{r}
+
+save_charts_func2 <- function(df, filename){
+  
+  temp_chart <- df %>% 
+                  mutate(category = reorder(category, n)) %>%
+                  ggplot(aes(x = category, y =n, fill = category)) +
+                    geom_col() +
+                    coord_flip() +
+                    theme_bw() +
+                    ggtitle(paste0(filename,"Attacks"))
+                            
+  ggsave(filename = paste0("charts_images/",filename, ".png"), 
+         plot = temp_chart, 
+         width = 11, height = 8.5, units = "in")
+}
+```
+
+
+```{r}
+brisbane_complaints %>% 
+  filter(animal_type == "Attack") %>% 
+  count(suburb, category) %>% 
+  drop_na() %>% 
+  nest(-suburb) %>% 
+  mutate(suburb = str_replace(suburb, " ","_")) %$%
+  walk2(.x = data, .y = suburb, .f = save_charts_func2)
+```
+
+
+## NHSR data set
+
+from: 
+https://youtu.be/GxvccD8K49M?t=2832
+
+```{r}
+# install.packages("NHSRdatasets")
+```
+
+```{r}
+library(NHSRdatasets)
+```
+
+
+```{r}
+ae_attendances %>% head()
+```
+
+```{r}
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>% head()
+```
+
+
+```{r}
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances))
+```
+
+
+```{r}
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest()
+```
+
+
+```{r}
+ae_attendances %>% 
+  filter(str_starts(org_code, "R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest()
+```
+
+
+
+```{r}
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest()
+```
+
+
+```{r}
+.Last.value$data[[1]]
+```
+
+
+```{r}
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest() %>% 
+  filter(map_dbl(data, nrow) == 36)
+```
+
+
+### udf function to plot
+
+```{r}
+plot_fn <- function(org_code, data){
+  data %>%
+    ggplot(aes(period, attendances)) +
+    geom_line() +
+    geom_point() +
+    labs(title = org_code) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90))
+} 
+  
+```
+
+### Creating plots using map
+
+```{r}
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest() %>% 
+  filter(map_dbl(data, nrow) == 36) %>% 
+  mutate(plot = map2(.x = org_code, .y = data, .f = plot_fn))
+```
+
+### Saving plots automatically
+
+```{r}
+# dir.create("nhsr_charts")
+
+
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest() %>% 
+  filter(map_dbl(data, nrow) == 36) %>% 
+  
+  # creating plot
+  mutate(plot = map2(.x = org_code, .y = data, .f = plot_fn)) %>%
+  
+  # creating file names
+  mutate(filename = paste0("nhsr_charts/", org_code, ".png")) 
+```
+
+
+```{r}
+# dir.create("nhsr_charts")
+
+
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest() %>% 
+  filter(map_dbl(data, nrow) == 36) %>% 
+  
+  # creating plot
+  mutate(plot = map2(.x = org_code, .y = data, .f = plot_fn)) %>%
+  
+  # creating file names
+  mutate(filename = paste0("nhsr_charts/", org_code, ".png")) %>% 
+  
+  ungroup() %>% 
+  
+  # selecting only plots column to save plots
+  head(10) %>% 
+  select(plot, filename) %>% 
+  
+  #saving plots
+  pwalk(ggsave)
+```
+
+
+
+```{r}
+# dir.create("nhsr_charts2")
+
+library(magrittr)
+
+ae_attendances %>% 
+  filter(org_code %>% str_starts("R")) %>%
+  group_by(org_code, period) %>% 
+  summarise(attendances = sum(attendances)) %>% 
+  nest() %>% 
+  filter(map_dbl(data, nrow) == 36) %>% 
+  
+  # creating plot
+  mutate(plot_var = map2(.x = org_code, .y = data, .f = plot_fn)) %>%
+  
+  # creating file names
+  mutate(filename = paste0("nhsr_charts2/", org_code, ".png")) %>% 
+  
+  ungroup() %>% 
+  
+  # selecting only plots column to save plots
+  head(10) %>% 
+  select(plot_var, filename) %$% 
+  
+  #saving plots
+  walk2(.x = filename, .y = plot_var, .f = ggsave)
+```
+
+
+
+
+
